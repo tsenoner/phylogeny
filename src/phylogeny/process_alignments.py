@@ -176,7 +176,7 @@ class AlignmentProcessor:
 
         num_sequences = len(sequences)
         seq_length = len(next(iter(sequences.values())))
-        max_name_length = max(len(name) for name in sequences.keys())
+        max_name_length = max(len(name) for name in sequences)
 
         # Ensure output directory exists
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -292,10 +292,7 @@ class AlignmentProcessor:
             Tuple of (successful conversions, failed conversions)
         """
         # Find all alignment files
-        if recursive:
-            pattern = "**/*"
-        else:
-            pattern = "*"
+        pattern = "**/*" if recursive else "*"
 
         files = []
         for ext in self.VALID_EXTENSIONS:
@@ -441,10 +438,7 @@ Examples:
         sys.exit(1)
 
     # Determine output directory
-    if args.output_dir:
-        output_dir = args.output_dir
-    else:
-        output_dir = args.input_dir.parent / "processed"
+    output_dir = args.output_dir or args.input_dir.parent / "processed"
 
     # Create processor
     processor = AlignmentProcessor(
