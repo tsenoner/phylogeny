@@ -302,32 +302,64 @@ class AlignmentProcessor:
 
             # Analyze first few sequences
             sample_seqs = sequences[: min(3, len(sequences))]
-            nucleotide_chars = set("ATGCNRYSWKMBDHV-")  # DNA/RNA chars + ambiguous
-            protein_specific_chars = set("EFILPQ")  # Unique to proteins
+
+            # Character sets for classification
+            strict_nucleotides = set("ATGC")  # Only A, T, G, C (no ambiguous codes)
+            all_amino_acids = set("ACDEFGHIKLMNPQRSTVWY")  # 20 standard amino acids
+            protein_specific_chars = set(
+                "EFILPQO"
+            )  # Chars unique to proteins (O = rare 21st)
 
             total_chars = 0
-            nucleotide_only_chars = 0
-            protein_only_chars = 0
+            strict_nucleotide_chars = 0
+            amino_acid_chars = 0
+            protein_specific_chars_count = 0
+            unique_chars = set()
 
             for seq in sample_seqs:
-                seq_upper = seq.upper().replace("-", "")  # Remove gaps
+                seq_upper = (
+                    seq.upper().replace("-", "").replace("X", "")
+                )  # Remove gaps and unknowns
                 total_chars += len(seq_upper)
-                nucleotide_only_chars += sum(
-                    1 for c in seq_upper if c in nucleotide_chars
+                unique_chars.update(seq_upper)
+                strict_nucleotide_chars += sum(
+                    1 for c in seq_upper if c in strict_nucleotides
                 )
-                protein_only_chars += sum(
+                amino_acid_chars += sum(1 for c in seq_upper if c in all_amino_acids)
+                protein_specific_chars_count += sum(
                     1 for c in seq_upper if c in protein_specific_chars
                 )
 
-            # If we have protein-specific amino acids, it's protein
-            if protein_only_chars > 0:
+            if total_chars == 0:
+                return "protein"  # Default fallback
+
+            # Calculate ratios
+            strict_nucleotide_ratio = strict_nucleotide_chars / total_chars
+            amino_acid_ratio = amino_acid_chars / total_chars
+            char_diversity = len(unique_chars)
+
+            # If we have ANY protein-specific amino acids, it's definitely protein
+            if protein_specific_chars_count > 0:
                 return "protein"
 
-            # If >95% of characters are valid nucleotides, it's DNA
-            if total_chars > 0 and (nucleotide_only_chars / total_chars) > 0.95:
+            # If >98% are valid amino acids but only ~25% are strict nucleotides, it's protein
+            # (catches proteins with mostly A,C,D,G,H,K,M,N,R,S,T,V,W,Y)
+            if amino_acid_ratio > 0.98 and strict_nucleotide_ratio < 0.30:
+                return "protein"
+
+            # If >98% of characters are STRICT nucleotides (A, T, G, C), it's DNA
+            if strict_nucleotide_ratio > 0.98:
                 return "dna"
 
-            # Default to protein for phylogenetic analysis
+            # If we have low diversity (≤4 unique chars) and >90% strict nucleotides, it's DNA
+            if char_diversity <= 4 and strict_nucleotide_ratio > 0.90:
+                return "dna"
+
+            # If we have high diversity (>5 chars) and low strict nucleotide ratio, it's protein
+            if char_diversity > 5 and strict_nucleotide_ratio < 0.90:
+                return "protein"
+
+            # Default to protein for phylogenetic analysis (safer for edge cases)
             return "protein"
 
         except Exception:
