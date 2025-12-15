@@ -261,110 +261,144 @@ class AlignmentProcessor:
         Returns:
             'dna' or 'protein'
         """
-        # First check filename for explicit hints
+        # Default to protein (safer for phylogenetic analysis)
+        seq_type = "protein"
+
+        # Check filename for explicit hints
         name_lower = file_path.name.lower()
-        if "protein" in name_lower or "aa" in name_lower or "prot" in name_lower:
-            return "protein"
-        if "dna" in name_lower or "nucleotide" in name_lower or "cds" in name_lower:
+        if any(hint in name_lower for hint in ["protein", "aa", "prot"]):
+            return seq_type
+        if any(hint in name_lower for hint in ["dna", "nucleotide", "cds"]):
             return "dna"
 
         # Analyze sequence content
         try:
-            content = file_path.read_text()
-            # Extract sequences (handle both FASTA and NEXUS)
-            sequences = []
-            if content.strip().upper().startswith("#NEXUS"):
-                # Parse NEXUS
-                matrix_match = re.search(
-                    r"MATRIX\s*([\s\S]*?);", content, re.IGNORECASE
-                )
-                if matrix_match:
-                    for line in matrix_match.group(1).strip().split("\n"):
-                        parts = line.strip().split()
-                        if len(parts) >= 2:
-                            sequences.append(parts[-1])
-            else:
-                # Parse FASTA
-                current_seq = []
-                for line in content.split("\n"):
-                    line = line.strip()
-                    if line.startswith(">"):
-                        if current_seq:
-                            sequences.append("".join(current_seq))
-                            current_seq = []
-                    elif line:
-                        current_seq.append(line)
-                if current_seq:
-                    sequences.append("".join(current_seq))
-
-            if not sequences:
-                return "protein"  # Default fallback
-
-            # Analyze first few sequences
-            sample_seqs = sequences[: min(3, len(sequences))]
-
-            # Character sets for classification
-            strict_nucleotides = set("ATGC")  # Only A, T, G, C (no ambiguous codes)
-            all_amino_acids = set("ACDEFGHIKLMNPQRSTVWY")  # 20 standard amino acids
-            protein_specific_chars = set(
-                "EFILPQO"
-            )  # Chars unique to proteins (O = rare 21st)
-
-            total_chars = 0
-            strict_nucleotide_chars = 0
-            amino_acid_chars = 0
-            protein_specific_chars_count = 0
-            unique_chars = set()
-
-            for seq in sample_seqs:
-                seq_upper = (
-                    seq.upper().replace("-", "").replace("X", "")
-                )  # Remove gaps and unknowns
-                total_chars += len(seq_upper)
-                unique_chars.update(seq_upper)
-                strict_nucleotide_chars += sum(
-                    1 for c in seq_upper if c in strict_nucleotides
-                )
-                amino_acid_chars += sum(1 for c in seq_upper if c in all_amino_acids)
-                protein_specific_chars_count += sum(
-                    1 for c in seq_upper if c in protein_specific_chars
-                )
-
-            if total_chars == 0:
-                return "protein"  # Default fallback
-
-            # Calculate ratios
-            strict_nucleotide_ratio = strict_nucleotide_chars / total_chars
-            amino_acid_ratio = amino_acid_chars / total_chars
-            char_diversity = len(unique_chars)
-
-            # If we have ANY protein-specific amino acids, it's definitely protein
-            if protein_specific_chars_count > 0:
-                return "protein"
-
-            # If >98% are valid amino acids but only ~25% are strict nucleotides, it's protein
-            # (catches proteins with mostly A,C,D,G,H,K,M,N,R,S,T,V,W,Y)
-            if amino_acid_ratio > 0.98 and strict_nucleotide_ratio < 0.30:
-                return "protein"
-
-            # If >98% of characters are STRICT nucleotides (A, T, G, C), it's DNA
-            if strict_nucleotide_ratio > 0.98:
-                return "dna"
-
-            # If we have low diversity (≤4 unique chars) and >90% strict nucleotides, it's DNA
-            if char_diversity <= 4 and strict_nucleotide_ratio > 0.90:
-                return "dna"
-
-            # If we have high diversity (>5 chars) and low strict nucleotide ratio, it's protein
-            if char_diversity > 5 and strict_nucleotide_ratio < 0.90:
-                return "protein"
-
-            # Default to protein for phylogenetic analysis (safer for edge cases)
-            return "protein"
-
+            sequences = self._extract_sequences(file_path)
+            if sequences:
+                seq_type = self._classify_sequences(sequences)
         except Exception:
-            # If we can't read/parse, default to protein
+            # On error, keep default (protein)
+            pass
+
+        return seq_type
+
+    def _extract_sequences(self, file_path: Path) -> list[str]:
+        """
+        Extract sequence strings from FASTA or NEXUS file.
+
+        Args:
+            file_path: Path to the alignment file
+
+        Returns:
+            List of sequence strings
+        """
+        content = file_path.read_text()
+        sequences = []
+
+        if content.strip().upper().startswith("#NEXUS"):
+            # Parse NEXUS format
+            matrix_match = re.search(r"MATRIX\s*([\s\S]*?);", content, re.IGNORECASE)
+            if matrix_match:
+                for line in matrix_match.group(1).strip().split("\n"):
+                    parts = line.strip().split()
+                    if len(parts) >= 2:
+                        sequences.append(parts[-1])
+        else:
+            # Parse FASTA format
+            current_seq = []
+            for line in content.split("\n"):
+                line = line.strip()
+                if line.startswith(">"):
+                    if current_seq:
+                        sequences.append("".join(current_seq))
+                        current_seq = []
+                elif line:
+                    current_seq.append(line)
+            if current_seq:
+                sequences.append("".join(current_seq))
+
+        return sequences
+
+    def _classify_sequences(self, sequences: list[str]) -> str:
+        """
+        Classify sequences as DNA or protein based on character composition.
+
+        Classification criteria (in order of priority):
+        1. Protein-exclusive amino acids present → protein
+        2. High character diversity (>10 unique) → protein
+        3. Low character diversity (≤4 unique) → DNA
+        4. High DNA base ratio (>90%) with low diversity (≤7) → DNA
+        5. Low DNA base ratio (<80%) → protein
+        6. Moderate ratio (80-90%) with low diversity (≤6) → DNA
+        7. Default → protein (safer for phylogenetic analysis)
+
+        Background:
+        - IUPAC nucleotide codes overlap extensively with amino acids:
+          A, C, D, G, H, K, M, N, R, S, T, V, W, Y appear in both
+        - Protein-exclusive characters: E, F, I, L, P, Q, J, O, Z
+        - DNA typically uses 4-6 unique characters (ATGC + ambiguity codes)
+        - Proteins typically use 12-20 unique characters
+
+        Args:
+            sequences: List of sequence strings to analyze
+
+        Returns:
+            'dna' or 'protein'
+        """
+        # Character sets
+        protein_exclusive = set("EFIJLOPQZ")  # Never in IUPAC nucleotide codes
+        dna_bases = set("ATGCU")  # Standard DNA/RNA bases
+
+        # Thresholds
+        high_diversity = 10  # More than this → definitely protein
+        low_diversity = 4  # This or fewer → definitely DNA
+        max_dna_diversity = 7  # DNA with ambiguity codes rarely exceeds this
+        high_dna_ratio = 0.90
+        low_dna_ratio = 0.80
+
+        # --- Collect and analyze characters ---
+        sample_seqs = sequences[: min(5, len(sequences))]
+        chars = [
+            c
+            for seq in sample_seqs
+            for c in seq.upper()
+            if c not in "-.*?X"  # Exclude gaps and unknowns
+        ]
+
+        # Handle empty sequences
+        if not chars:
             return "protein"
+
+        # Compute metrics
+        unique_chars = set(chars)
+        diversity = len(unique_chars)
+        has_protein_exclusive = bool(unique_chars & protein_exclusive)
+        dna_ratio = sum(1 for c in chars if c in dna_bases) / len(chars)
+
+        # --- Classification (single if/elif/else chain) ---
+        if has_protein_exclusive:
+            # Definitive: contains amino acids that never appear in nucleotide codes
+            result = "protein"
+        elif diversity > high_diversity:
+            # High diversity indicates protein (DNA rarely has >6-7 unique chars)
+            result = "protein"
+        elif diversity <= low_diversity:
+            # Very low diversity indicates DNA (ATGC only)
+            result = "dna"
+        elif dna_ratio > high_dna_ratio and diversity <= max_dna_diversity:
+            # High DNA base content with moderate diversity → DNA with ambiguity codes
+            result = "dna"
+        elif dna_ratio < low_dna_ratio:
+            # Low DNA base content → protein
+            result = "protein"
+        elif diversity <= 6 and dna_ratio > 0.85:
+            # Borderline: moderate ratio but low diversity → lean DNA
+            result = "dna"
+        else:
+            # Default: protein is safer for phylogenetic analysis
+            result = "protein"
+
+        return result
 
     def process_directory(
         self,
