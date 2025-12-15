@@ -62,9 +62,7 @@ def fasta_to_relaxed_phy_aligned(
         f.write(f"{len(sequences)} {len(next(iter(sequences.values())))}\n")
         for name, sequence in sequences.items():
             padded_name = (
-                name.ljust(max(len(name) for name in sequences) + 1)
-                if lalign
-                else name
+                name.ljust(max(len(name) for name in sequences) + 1) if lalign else name
             )
             f.write(f"{padded_name} {sequence}\n")
 

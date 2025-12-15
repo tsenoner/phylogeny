@@ -117,7 +117,6 @@ def plot_data(data, output_path):
     ax1.set_yscale("log")
     ax1.grid(which="both", axis="y")
     formatter = FuncFormatter(lambda y, _: f"{y:.2g}%")
-    formatter2 = FuncFormatter(lambda y, pos: f"{y:.2g}%" if (pos + 1) % 2 else "")
     ax1.yaxis.set_major_formatter(formatter)
     ax1.yaxis.set_minor_formatter(formatter)
 
@@ -134,9 +133,10 @@ def plot_data(data, output_path):
     # --- Set the x-axis labels to 'Days-Hours' format using a FuncFormatter ---
     # Interpolation function for cumulative time
     f = interp1d(data["generation"], data["cumulative_time"])
-    get_value = lambda x: f(
-        min(max(data["generation"].min(), x), data["generation"].max())
-    )
+
+    def get_value(x):
+        return f(min(max(data["generation"].min(), x), data["generation"].max()))
+
     ax2.xaxis.set_major_formatter(
         FuncFormatter(lambda x, pos: convert_time(get_value(x)))
     )

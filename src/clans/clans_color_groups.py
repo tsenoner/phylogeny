@@ -72,9 +72,7 @@ def modify_clans_file(
         "is_bold=False\n",
         "is_italic=False\n",
     ]
-    feature_to_color = {
-        feature: color for feature, color in zip(feature_mapping.keys(), colors)
-    }
+    feature_to_color = dict(zip(feature_mapping, colors))
     for feature, color in sorted(feature_to_color.items()):
         rgba_color = (
             ";".join([str(int(color[j : j + 2], 16)) for j in (1, 3, 5)]) + ";255"

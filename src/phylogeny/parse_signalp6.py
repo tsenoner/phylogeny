@@ -65,7 +65,7 @@ def process_fasta_sequences(
 
     with open(output_fasta, "w") as out_f:
         fasta_sequences = Fasta(input_fasta, read_long_names=True)
-        for seq_id in fasta_sequences.keys():
+        for seq_id in fasta_sequences:
             seq = str(fasta_sequences[seq_id])
             signalp_info = signalp_dict.get(seq_id, None)
             if signalp_info is None:
