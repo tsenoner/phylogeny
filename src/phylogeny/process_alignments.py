@@ -253,8 +253,7 @@ class AlignmentProcessor:
     def get_sequence_type(self, file_path: Path) -> str:
         """
         Determine if file contains DNA or protein sequences.
-        Simple heuristic: if filename contains 'dna' or 'protein', use that.
-        Otherwise, default to 'protein'.
+        Analyzes actual sequence content to detect nucleotide vs amino acid sequences.
 
         Args:
             file_path: Path to the file
@@ -262,13 +261,78 @@ class AlignmentProcessor:
         Returns:
             'dna' or 'protein'
         """
+        # First check filename for explicit hints
         name_lower = file_path.name.lower()
-        if "dna" in name_lower or "nucleotide" in name_lower:
-            return "dna"
-        elif "protein" in name_lower or "aa" in name_lower:
+        if "protein" in name_lower or "aa" in name_lower or "prot" in name_lower:
             return "protein"
-        # Default to protein for phylogenetic analysis
-        return "protein"
+        if "dna" in name_lower or "nucleotide" in name_lower or "cds" in name_lower:
+            return "dna"
+
+        # Analyze sequence content
+        try:
+            content = file_path.read_text()
+            # Extract sequences (handle both FASTA and NEXUS)
+            sequences = []
+            if content.strip().upper().startswith("#NEXUS"):
+                # Parse NEXUS
+                matrix_match = re.search(
+                    r"MATRIX\s*([\s\S]*?);", content, re.IGNORECASE
+                )
+                if matrix_match:
+                    for line in matrix_match.group(1).strip().split("\n"):
+                        parts = line.strip().split()
+                        if len(parts) >= 2:
+                            sequences.append(parts[-1])
+            else:
+                # Parse FASTA
+                current_seq = []
+                for line in content.split("\n"):
+                    line = line.strip()
+                    if line.startswith(">"):
+                        if current_seq:
+                            sequences.append("".join(current_seq))
+                            current_seq = []
+                    elif line:
+                        current_seq.append(line)
+                if current_seq:
+                    sequences.append("".join(current_seq))
+
+            if not sequences:
+                return "protein"  # Default fallback
+
+            # Analyze first few sequences
+            sample_seqs = sequences[: min(3, len(sequences))]
+            nucleotide_chars = set("ATGCNRYSWKMBDHV-")  # DNA/RNA chars + ambiguous
+            protein_specific_chars = set("EFILPQ")  # Unique to proteins
+
+            total_chars = 0
+            nucleotide_only_chars = 0
+            protein_only_chars = 0
+
+            for seq in sample_seqs:
+                seq_upper = seq.upper().replace("-", "")  # Remove gaps
+                total_chars += len(seq_upper)
+                nucleotide_only_chars += sum(
+                    1 for c in seq_upper if c in nucleotide_chars
+                )
+                protein_only_chars += sum(
+                    1 for c in seq_upper if c in protein_specific_chars
+                )
+
+            # If we have protein-specific amino acids, it's protein
+            if protein_only_chars > 0:
+                return "protein"
+
+            # If >95% of characters are valid nucleotides, it's DNA
+            if total_chars > 0 and (nucleotide_only_chars / total_chars) > 0.95:
+                return "dna"
+
+            # Default to protein for phylogenetic analysis
+            return "protein"
+
+        except Exception:
+            # If we can't read/parse, default to protein
+            return "protein"
 
     def process_directory(
         self,
