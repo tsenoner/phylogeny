@@ -12,7 +12,7 @@ dependencies = [
     "kneed>=0.8.5",
     "numpy>=2.2.6",
     "pandas>=2.3.0",
-    "protspace[frontend]==2.1.2",
+    "protspace[frontend]==3.1.1",
     "pyfaidx>=0.8.1.4",
 ]
 
