@@ -85,7 +85,27 @@ uv run python src/phylogeny/nexus2fasta.py input.nexus
 
 **Location:** `src/phylogeny/nexus2tree.py`
 
-Processes NEXUS tree files from ExaBayes output.
+Processes NEXUS tree files from ExaBayes output by collapsing nodes below a bootstrap support threshold.
+
+**Features:**
+
+- Collapse nodes below bootstrap threshold (default 50%)
+- Process single file or entire directory
+- Remove leaf annotations
+- Optional tree rerooting
+
+**Usage:**
+
+```bash
+# Process single file (output: file_collapsed50.nexus)
+uv run python src/phylogeny/nexus2tree.py file.nexus -b 50
+
+# Process entire directory (output: input_dir_processed/*.nexus)
+uv run python src/phylogeny/nexus2tree.py data/animal_venom/cap_251215/nexus/ -b 50
+
+# Custom output directory
+uv run python src/phylogeny/nexus2tree.py input_dir/ -o custom_output/ -b 50
+```
 
 #### `run_mafft.py`
 
