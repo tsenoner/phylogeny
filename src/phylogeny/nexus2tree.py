@@ -29,6 +29,10 @@ def reroot_tree(tree, reroot_taxon_label):
         return
 
     outgroup_node = tree.find_node_with_taxon_label(reroot_taxon_label)
+    if outgroup_node is None:
+        # Try with underscores replaced by spaces (dendropy default behavior)
+        alt_label = reroot_taxon_label.replace("_", " ")
+        outgroup_node = tree.find_node_with_taxon_label(alt_label)
     if outgroup_node:
         tree.to_outgroup_position(outgroup_node, update_bipartitions=False)
     else:
@@ -54,7 +58,9 @@ def process_nexus_file(
 ):
     """Load, process, and save a Nexus tree file."""
     print(f"Processing: {nexus_path.name}")
-    tree = dendropy.Tree.get(path=nexus_path, schema="nexus")
+    tree = dendropy.Tree.get(
+        path=nexus_path, schema="nexus", preserve_underscores=False
+    )
 
     prune_nodes(tree, node_annotation, bootstrap_threshold)
     remove_leaf_annotations(tree)
